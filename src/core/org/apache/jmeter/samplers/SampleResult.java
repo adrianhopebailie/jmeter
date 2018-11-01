@@ -267,6 +267,8 @@ public class SampleResult implements Serializable, Cloneable, Searchable {
     private URL location;
 
     private transient boolean ignore;
+    
+    private transient int subResultIndex;
 
     /**
      * Cache for responseData as string to avoid multiple computations
@@ -450,7 +452,7 @@ public class SampleResult implements Serializable, Cloneable, Searchable {
     public long currentTimeInMillis() {
         if (useNanoTime){
             if (nanoTimeOffset == Long.MIN_VALUE){
-                throw new RuntimeException("Invalid call; nanoTimeOffset as not been set");
+                throw new RuntimeException("Invalid call; nanoTimeOffset has not been set");
             }
             return sampleNsClockInMs() + nanoTimeOffset;            
         }
@@ -612,6 +614,16 @@ public class SampleResult implements Serializable, Cloneable, Searchable {
      *            the {@link SampleResult} to be added
      */
     public void addSubResult(SampleResult subResult) {
+        addSubResult(subResult, true);
+    }
+    /**
+     * Add a subresult and adjust the parent byte count and end-time.
+     * 
+     * @param subResult
+     *            the {@link SampleResult} to be added
+     * @param renameSubResults boolean do we rename subResults based on position
+     */
+    public void addSubResult(SampleResult subResult, boolean renameSubResults) {
         if(subResult == null) {
             // see https://bz.apache.org/bugzilla/show_bug.cgi?id=54778
             return;
@@ -630,7 +642,7 @@ public class SampleResult implements Serializable, Cloneable, Searchable {
         setSentBytes(getSentBytes() + subResult.getSentBytes());
         setHeadersSize(getHeadersSize() + subResult.getHeadersSize());
         setBodySize(getBodySizeAsLong() + subResult.getBodySizeAsLong());
-        addRawSubResult(subResult);
+        addRawSubResult(subResult, renameSubResults);
     }
     
     /**
@@ -640,7 +652,17 @@ public class SampleResult implements Serializable, Cloneable, Searchable {
      *            the {@link SampleResult} to be added
      */
     public void addRawSubResult(SampleResult subResult){
-        storeSubResult(subResult);
+        storeSubResult(subResult, true);
+    }
+    
+    /**
+     * Add a subresult to the collection without updating any parent fields.
+     * 
+     * @param subResult
+     *            the {@link SampleResult} to be added
+     */
+    private void addRawSubResult(SampleResult subResult, boolean renameSubResults){
+        storeSubResult(subResult, renameSubResults);
     }
 
     /**
@@ -654,8 +676,26 @@ public class SampleResult implements Serializable, Cloneable, Searchable {
      *            the {@link SampleResult} to be added
      */
     public void storeSubResult(SampleResult subResult) {
+        storeSubResult(subResult, true);
+    }
+    
+    /**
+     * Add a subresult read from a results file.
+     * <p>
+     * As for {@link SampleResult#addSubResult(SampleResult)
+     * addSubResult(SampleResult)}, except that the fields don't need to be
+     * accumulated
+     *
+     * @param subResult
+     *            the {@link SampleResult} to be added
+     * @param renameSubResults boolean do we rename subResults based on position
+     */
+    private void storeSubResult(SampleResult subResult, boolean renameSubResults) {
         if (subResults == null) {
             subResults = new ArrayList<>();
+        }
+        if(renameSubResults) {
+            subResult.setSampleLabel(getSampleLabel()+"-"+subResultIndex++);
         }
         subResults.add(subResult);
         subResult.setParent(this);
@@ -1475,7 +1515,7 @@ public class SampleResult implements Serializable, Cloneable, Searchable {
     }
 
     /**
-     * @deprecated use {@link SampleResult#setTestLogicalAction(TestLogicalAction)}
+     * @deprecated use SampleResult#setTestLogicalAction(TestLogicalAction)
      * @param startNextThreadLoop the startNextLoop to set
      */
     @Deprecated

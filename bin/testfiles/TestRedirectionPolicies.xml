@@ -2,17 +2,17 @@
 <testResults version="1.2">
 <httpSample s="true" lb="HR_AutoRedirect" rc="200" rm="OK" dt="text">
   <assertionResult>
-    <name>RA_Redirected</name>
-    <failure>false</failure>
-    <error>false</error>
-  </assertionResult>
-  <assertionResult>
     <name>RA_200</name>
     <failure>false</failure>
     <error>false</error>
   </assertionResult>
   <assertionResult>
     <name>JSA_0SR</name>
+    <failure>false</failure>
+    <error>false</error>
+  </assertionResult>
+  <assertionResult>
+    <name>RA_Redirected</name>
     <failure>false</failure>
     <error>false</error>
   </assertionResult>
@@ -31,11 +31,6 @@
 </httpSample>
 <httpSample s="true" lb="HR_FollowRedirect" rc="200" rm="OK" dt="text">
   <assertionResult>
-    <name>RA_Redirected</name>
-    <failure>false</failure>
-    <error>false</error>
-  </assertionResult>
-  <assertionResult>
     <name>RA_200</name>
     <failure>false</failure>
     <error>false</error>
@@ -45,8 +40,13 @@
     <failure>false</failure>
     <error>false</error>
   </assertionResult>
-  <httpSample s="true" lb="http://httpbin.org/redirect/1" rc="302" rm="FOUND" dt="text"/>
-  <httpSample s="true" lb="http://httpbin.org/get" rc="200" rm="OK" dt="text"/>
+  <assertionResult>
+    <name>RA_Redirected</name>
+    <failure>false</failure>
+    <error>false</error>
+  </assertionResult>
+  <httpSample s="true" lb="HR_FollowRedirect-0" rc="302" rm="FOUND" dt="text"/>
+  <httpSample s="true" lb="HR_FollowRedirect-1" rc="200" rm="OK" dt="text"/>
 </httpSample>
 <httpSample s="true" lb="HR_NoAutoRedirect" rc="302" rm="FOUND" dt="text">
   <assertionResult>
@@ -62,11 +62,6 @@
 </httpSample>
 <httpSample s="true" lb="HR_FollowRedirect" rc="200" rm="OK" dt="text">
   <assertionResult>
-    <name>RA_Redirected</name>
-    <failure>false</failure>
-    <error>false</error>
-  </assertionResult>
-  <assertionResult>
     <name>RA_200</name>
     <failure>false</failure>
     <error>false</error>
@@ -76,22 +71,27 @@
     <failure>false</failure>
     <error>false</error>
   </assertionResult>
-  <httpSample s="true" lb="http://httpbin.org/redirect/1" rc="302" rm="FOUND" dt="text"/>
-  <httpSample s="true" lb="http://httpbin.org/get" rc="200" rm="OK" dt="text"/>
+  <assertionResult>
+    <name>RA_Redirected</name>
+    <failure>false</failure>
+    <error>false</error>
+  </assertionResult>
+  <httpSample s="true" lb="HR_FollowRedirect-0" rc="302" rm="FOUND" dt="text"/>
+  <httpSample s="true" lb="HR_FollowRedirect-1" rc="200" rm="OK" dt="text"/>
 </httpSample>
 <httpSample s="true" lb="HR_AutoRedirect" rc="200" rm="OK" dt="text">
   <assertionResult>
-    <name>RA_Redirected</name>
-    <failure>false</failure>
-    <error>false</error>
-  </assertionResult>
-  <assertionResult>
     <name>RA_200</name>
     <failure>false</failure>
     <error>false</error>
   </assertionResult>
   <assertionResult>
     <name>JSA_0SR</name>
+    <failure>false</failure>
+    <error>false</error>
+  </assertionResult>
+  <assertionResult>
+    <name>RA_Redirected</name>
     <failure>false</failure>
     <error>false</error>
   </assertionResult>

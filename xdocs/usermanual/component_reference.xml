@@ -172,11 +172,10 @@ Latency is set to the time it takes to login.
 <source>
 https.sessioncontext.shared=true
 </source>
-        By default, the SSL context is retained for the duration of the test.
-        The SSL session can be optionally reset for each test iteration.
-        To enable this, set the JMeter property:
+        By default, since version 5.0, the SSL context is retained during a Thread Group iteration and reset for each test iteration.
+        If in your test plan the same user iterates multiple times, then you should set this to false.
 <source>
-https.use.cached.ssl.context=false
+httpclient.reset_state_on_thread_group_iteration=true
 </source>
         <note>
          Note: this does not apply to the Java HTTP implementation.
@@ -1810,6 +1809,7 @@ Defaults are: SMTP=25, SSL=465, StartTLS=587
 Relative paths are resolved against the current directory.
 <br />Failing that, against the directory containing the test script (JMX file).
 </property>
+<property name="Override System SSL/TLS Protocols" required="No">Specify a custom SSL/TLS protocol as space separated list to use on handshake example <code>TLSv1 TLSv1.1 TLSv1.2</code>. Defaults to all supported protocols.</property>
 <property name="Subject" required="">The e-mail message subject.</property>
 <property name="Suppress Subject Header" required="">If selected, the "<code>Subject:</code>" header is omitted from the mail that is sent. 
 This is different from sending an empty "<code>Subject:</code>" header, though some e-mail clients may display it identically.</property>
@@ -2262,7 +2262,7 @@ If the last sample just before the loop failed, don't enter loop.</li>
 </ul>
 <note>
 The condition can be any variable or function that eventually evaluates to the string "<code>false</code>".
-This allows the use of <code>__jexl3</code>, <code>__groovy</code> function, properties or variables as needed.
+This allows the use of <code><funclink name="__jexl3"/></code>, <code><funclink name="__groovy"/></code> function, properties or variables as needed.
 </note>
 <br></br>
 <note>
@@ -2344,11 +2344,11 @@ This would be the case if the Regular Expression returned no matches.</note>
 
 <properties>
         <property name="Name" required="No">Descriptive name for this controller that is shown in the tree.</property>
-        <property name="Input variable prefix" required="Yes">Prefix for the variable names to be used as input.</property>
+        <property name="Input variable prefix" required="No">Prefix for the variable names to be used as input. Defaults to an empty string as prefix.</property>
         <property name="Start index for loop" required="No">Start index (exclusive) for loop over variables (first element is at start index + 1)</property>
         <property name="End index for loop" required="No">End index (inclusive) for loop over variables</property>
-        <property name="Output variable" required="Yes">
-                The name of the variable which can be used in the loop for replacement in the samplers</property>
+        <property name="Output variable" required="No">
+                The name of the variable which can be used in the loop for replacement in the samplers. Defaults to an empty variable name, which is most probably not wanted.</property>
         <property required="Yes" name="Use Separator">If not checked, the "<code>_</code>" separator is omitted.</property>
 </properties>
 
@@ -3644,6 +3644,9 @@ Look at the two sample configuration files (<code>krb5.conf</code> and <code>jaa
 for references to more documentation, and tweak them to match your Kerberos configuration.
 </p>
 <p>
+Delegation of credentials is disabled by default for SPNEGO. If you want to enable it, you can do so by setting the property <code>kerberos.spnego.delegate_cred</code> to <code>true</code>.
+</p>
+<p>
 When generating a SPN for Kerberos SPNEGO authentication IE and Firefox will omit the port number
 from the URL. Chrome has an option (<code>--enable-auth-negotiate-port</code>) to include the port
 number if it differs from the standard ones (<code>80</code> and <code>443</code>). That behavior
@@ -3710,7 +3713,7 @@ Note that if <code>Cache-Control</code> header is "<code>no-cache</code>", the r
 so will generate a conditional <code>GET</code> request.
 If <code>Cache-Control</code> has any other value, 
 the "<code>max-age</code>" expiry option is processed to compute entry lifetime, if missing then expire header will be used, if also missing entry will be cached 
-as specified in <a href="http://www.ietf.org/rfc/rfc2616.txt">RFC 2616</a> section 13.2.4. using <code>Last-Modified</code> time and response Date.
+as specified in <rfc link="2616#section-13.2.4">RFC 2616 section 13.2.4</rfc> using <code>Last-Modified</code> time and response Date.
 </p>
 <note>
 If the requested document has not changed since it was cached, then the response body will be empty.
@@ -3930,6 +3933,8 @@ instead. (see figures 12 and 13).</p>
         <property name="Time Between Eviction Runs (ms)" required="Yes">The number of milliseconds to sleep between runs of the idle object evictor thread. When non-positive, no idle object evictor thread will be run. (Defaults to "<code>60000</code>", 1 minute).
         See <a href="https://commons.apache.org/proper/commons-dbcp/api-2.1.1/org/apache/commons/dbcp2/BasicDataSource.html#getTimeBetweenEvictionRunsMillis--" >BasicDataSource.html#getTimeBetweenEvictionRunsMillis</a></property>
         <property name="Auto Commit" required="Yes">Turn auto commit on or off for the connections.</property>
+        <property name="Transaction isolation" required="Yes">Transaction isolation level</property>
+        <property name="Init SQL statements separated by new line" required="No">A Collection of SQL statements that will be used to initialize physical connections when they are first created. These statements are executed only once - when the configured connection factory creates the connection. </property>
         <property name="Test While Idle" required="Yes">Test idle connections of the pool, see <a href="https://commons.apache.org/proper/commons-dbcp/api-2.1.1/org/apache/commons/dbcp2/BasicDataSource.html#getTestWhileIdle--">BasicDataSource.html#getTestWhileIdle</a>. 
         Validation Query will be used to test it.</property>
         <property name="Soft Min Evictable Idle Time(ms)" required="Yes">Minimum amount of time a connection may sit idle in the pool before it is eligible for eviction by the idle object evictor, with the extra condition that at least <code>minIdle</code> connections remain in the pool.
@@ -4075,9 +4080,9 @@ This component is typically used in HTTPS scenarios where you don't want to take
 <properties>
   <property name="Name" required="No">Descriptive name for this element that is shown in the tree. </property>
   <property name="Preload" required="Yes">Wether or not to preload Keystore. Setting it to <code>true</code> is usually the best option.</property>
-  <property name="Variable name holding certificate alias" required="False">Variable name that will contain the alias to use for authentication by client certificate. Variable value will be filled from CSV Data Set for example. In the screenshot, "<code>certificat_ssl</code>" will also be a variable in CSV Data Set.</property>
+  <property name="Variable name holding certificate alias" required="False">Variable name that will contain the alias to use for authentication by client certificate. Variable value will be filled from CSV Data Set for example. In the screenshot, "<code>certificat_ssl</code>" will also be a variable in CSV Data Set. Defaults to <code>clientCertAliasVarName</code></property>
   <property name="Alias Start Index" required="Yes">The index of the first key to use in Keystore, 0-based.</property>
-  <property name="Alias End Index" required="Yes">The index of the last key to use in Keystore, 0-based. When using "<code>Variable name holding certificate alias</code>" ensure it is large enough so that all keys are loaded at startup.</property>
+  <property name="Alias End Index" required="Yes">The index of the last key to use in Keystore, 0-based. When using "<code>Variable name holding certificate alias</code>" ensure it is large enough so that all keys are loaded at startup. Default to -1 which means load all.</property>
 </properties>
 <note>
 To make JMeter use more than one certificate you need to ensure that:
@@ -4213,9 +4218,10 @@ to use a variable other than a property as a value for the minimum or maximum. I
   If not specified, the default is to generate the number using <code>Long.toString()</code></property>
   <property name="Minimum Value" required="Yes">The minimum value (<code>long</code>) of the generated random number.</property>
   <property name="Maximum Value" required="Yes">The maximum value (<code>long</code>) of the generated random number.</property>
-  <property name="Random Seed" required="No">The seed for the random number generator. Default is the current time in milliseconds. 
+  <property name="Random Seed" required="No">The seed for the random number generator. 
   If you use the same seed value with Per Thread set to <code>true</code>, you will get the same value for each Thread as per 
   <a href="http://docs.oracle.com/javase/8/docs/api/java/util/Random.html" >Random</a> class.
+  If no seed is set, Default constructor of Random will be used.
   </property>
   <property name="Per Thread(User)?" required="Yes">If <code>False</code>, the generator is shared between all threads in the thread group.
   If <code>True</code>, then each thread has its own random generator.</property>
@@ -4693,17 +4699,19 @@ Some sample expressions:
 The non-tolerant parser can be quite slow, as it may need to download the DTD etc.
 </note>
 <note>
-<b>NAMESPACES</b>
-As a work-round for namespace limitations of the Xalan XPath parser implementation on which JMeter is based,
-you can provide a Properties file which contains mappings for the namespace prefixes: 
+<b>NAMESPACES</b><br/>
+As a work-round for namespace limitations of the Xalan XPath parser (implementation on which JMeter is based) you need to:
+<ul>
+<li>provide a Properties file (if for example your file is named namespaces.properties) which contains mappings for the namespace prefixes: 
 <source>
-prefix1=Full Namespace 1
-prefix2=Full Namespace 2
+prefix1=http\://foo.apache.org
+prefix2=http\://toto.apache.org
 &hellip;
-</source>
+</source></li>
 
-You reference this file in <code>jmeter.properties</code> file using the property:
-    <source>xpath.namespace.config</source>
+<li>reference this file in <code>user.properties</code> file using the property:
+    <source>xpath.namespace.config=namespaces.properties</source></li>
+</ul>
 </note>
 </component>
 <component name="XML Schema Assertion" index="&sect-num;.5.9"  width="472" height="132" screenshot="assertion/XMLSchemaAssertion.png">
@@ -5657,8 +5665,8 @@ generate the template string, and store the result into the given variable name.
     and <a href="regular_expressions.html"> for further information on JMeter regular expressions.</a></p>
 </component>
 
-<component name="CSS/JQuery Extractor" index="&sect-num;.8.2"  width="826" height="276" screenshot="css_extractor_attr.png">
-<description><p>Allows the user to extract values from a server response using a CSS/JQuery selector like syntax.  As a post-processor,
+<component name="CSS Selector Extractor" was="CSS/JQuery Extractor" index="&sect-num;.8.2"  width="826" height="276" screenshot="css_extractor_attr.png">
+<description><p>Allows the user to extract values from a server HTML response using a CSS Selector syntax.  As a post-processor,
 this element will execute after each Sample request in its scope, applying the CSS/JQuery expression, extracting the requested nodes,
 extracting the node as text or attribute value and store the result into the given variable name.</p></description>
 <properties>
@@ -5680,7 +5688,7 @@ extracting the node as text or attribute value and store the result into the giv
         For match number = <code>0</code> or negative, all qualifying samples will be processed.
         For match number > <code>0</code>, matching will stop as soon as enough matches have been found.
         </property>
-        <property name="CSS/JQuery extractor Implementation" required="False">
+        <property name="CSS Selector Implementation" required="False">
         2 Implementations for CSS/JQuery based syntax are supported:
         <ul>
                 <li><a href="http://jsoup.org/" >JSoup</a></li>
@@ -5758,10 +5766,62 @@ extracting the node as text or attribute value and store the result into the giv
 </p>
 </component>
 
+<component name="XPath2 Extractor" index="&sect-num;.8.3"  width="926" height="333" screenshot="xpath2_extractor.png">
+    <description>This test element allows the user to extract value(s) from structured response - XML or (X)HTML - 
+    using XPath2 query language.
+   </description>
+   <properties>
+       <property name="Name" required="No">Descriptive name for this element that is shown in the tree.</property>
+       <property name="Apply to:" required="Yes">
+        This is for use with samplers that can generate sub-samples, 
+        e.g. HTTP Sampler with embedded resources, Mail Reader or samples generated by the Transaction Controller.
+        <ul>
+        <li><code>Main sample only</code> - only applies to the main sample</li>
+        <li><code>Sub-samples only</code> - only applies to the sub-samples</li>
+        <li><code>Main sample and sub-samples</code> - applies to both.</li>
+        <li><code>JMeter Variable Name to use</code> - extraction is to be applied to the contents of the named variable</li>
+        </ul>
+        XPath matching is applied to all qualifying samples in turn, and all the matching results will be returned.
+       </property>
+    <property name="Return entire XPath fragment instead of text content?" required="Yes">
+    If selected, the fragment will be returned rather than the text content.<br></br>
+    For example <code>//title</code> would return "<code>&lt;title&gt;Apache JMeter&lt;/title&gt;</code>" rather than "<code>Apache JMeter</code>".<br></br>
+    In this case, <code>//title/text()</code> would return "<code>Apache JMeter</code>".
+    </property>
+    <property name="Name of created variable" required="Yes">The name of the JMeter variable in which to store the result.</property>
+    <property name="XPath Query" required="Yes">Element query in XPath 2.0 language. Can return more than one match.</property>
+    <property name="Match No. (0 for Random)" required="No">If the XPath Path query leads to many results, you can choose which one(s) to extract as Variables:
+    <ul>
+        <li><code>0</code> : means random (default value)</li>
+        <li><code>-1</code> means extract all results, they will be named as <code><em>&lt;variable name&gt;</em>_N</code> (where <code>N</code> goes from 1 to Number of results)</li>
+        <li><code>X</code> : means extract the X<sup>th</sup> result. If this X<sup>th</sup> is greater than number of matches, then nothing is returned. Default value will be used</li>
+    </ul>
+    </property>
+    <property name="Default Value" required="yes">Default value returned when no match found. 
+    It is also returned if the node has no value and the fragment option is not selected.</property>
+    <property name="Namespaces aliases list" required="No">List of namespaces aliases you want to use to parse the document, one line per declaration.
+    You must specify them as follow : <code>prefix=namespace</code>. This implementation makes it easier to
+    use namespaces than with the old XPathExtractor version.</property>
+   </properties>
+   <p>To allow for use in a <complink name="ForEach Controller"/>, it works exactly the same as the above XPath Extractor</p>
+   <p>XPath2 Extractor provides some interestings tools such as an improved syntax and much more functions than in it's first version.</p>
+   <p>Here are some exemples : </p>
+   <dl> 
+   <dt><code>abs(/book/page[2])</code></dt>
+     <dd>extracts 2<sup>nd</sup> absolute value of the page from a book</dd>
+   <dt><code>avg(/librarie/book/page)</code></dt>
+     <dd>extracts the average number of page from all the books in the libraries</dd>
+     <dt><code>compare(/book[1]/page[2],/book[2]/page[2])</code></dt>
+    <dd>return Integer value equal 0 to if the 2<sup>nd</sup> page of the first book is equal to the 2<sup>nd</sup> page of the 2<sup>nd</sup> book, else return -1.</dd>
+ </dl>
+ <p>To see more informations about thoses fuctions, please check <a href="http://saxon.sourceforge.net/saxon7.9.1/functions.html">xPath2 functions</a></p>
+</component>
+
 <component name="XPath Extractor" index="&sect-num;.8.3"  width="729" height="317" screenshot="xpath_extractor.png">
     <description>This test element allows the user to extract value(s) from 
         structured response - XML or (X)HTML - using XPath
         query language.
+        <note>Since JMeter 5.0, you should use <complink name="XPath2 Extractor"/> as it provides better and easier namespace management, better performances and support for XPath 2.0</note>
    </description>
    <properties>
        <property name="Name" required="No">Descriptive name for this element that is shown in the tree.</property>
@@ -5781,7 +5841,7 @@ extracting the node as text or attribute value and store the result into the giv
            <li>"<code>Use Tidy</code>" should be checked on for HTML response. Such response is converted to valid XHTML (XML compatible HTML) using Tidy</li>
            <li>"<code>Use Tidy</code>" should be unchecked for both XHTML or XML response (for example RSS)</li>
        </ul>
-       <note>For HTML, CSS/JQuery Extractor is the correct and performing solution. Don't use XPath for HTML extractions.</note>
+       <note>For HTML, CSS Selector Extractor is the correct and performing solution. Don't use XPath for HTML extractions.</note>
        </property>
 <property name="Quiet"  required="If Tidy is selected">Sets the Tidy Quiet flag</property>
 <property name="Report Errors"  required="If Tidy is selected">If a Tidy error occurs, then set the Assertion accordingly</property>
@@ -5845,17 +5905,19 @@ extracting the node as text or attribute value and store the result into the giv
  </note>
  
  <note>
-<b>NAMESPACES</b>
-As a work-round for namespace limitations of the Xalan XPath parser implementation on which JMeter is based,
-you can provide a Properties file which contains mappings for the namespace prefixes: 
+<b>NAMESPACES</b><br/>
+As a work-round for namespace limitations of the Xalan XPath parser (implementation on which JMeter is based) you need to:
+<ul>
+<li>provide a Properties file (if for example your file is named namespaces.properties) which contains mappings for the namespace prefixes: 
 <source>
-prefix1=Full Namespace 1
-prefix2=Full Namespace 2
+prefix1=http\://foo.apache.org
+prefix2=http\://toto.apache.org
 &hellip;
-</source>
+</source></li>
 
-You reference this file in <code>jmeter.properties</code> file using the property:
-    <source>xpath.namespace.config</source>
+<li>reference this file in <code>user.properties</code> file using the property:
+    <source>xpath.namespace.config=namespaces.properties</source></li>
+</ul>
 </note>
 <p></p>
 Another option is to use the following code:

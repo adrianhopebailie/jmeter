@@ -41,7 +41,6 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
-import java.util.zip.GZIPInputStream;
 
 import javax.security.auth.Subject;
 
@@ -110,7 +109,6 @@ import org.apache.http.impl.auth.DigestScheme;
 import org.apache.http.impl.auth.DigestSchemeFactory;
 import org.apache.http.impl.auth.KerberosScheme;
 import org.apache.http.impl.auth.NTLMSchemeFactory;
-import org.apache.http.impl.auth.SPNegoSchemeFactory;
 import org.apache.http.impl.client.BasicAuthCache;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.CloseableHttpClient;
@@ -142,8 +140,10 @@ import org.apache.jmeter.protocol.http.control.Authorization;
 import org.apache.jmeter.protocol.http.control.CacheManager;
 import org.apache.jmeter.protocol.http.control.CookieManager;
 import org.apache.jmeter.protocol.http.control.DynamicKerberosSchemeFactory;
+import org.apache.jmeter.protocol.http.control.DynamicSPNegoSchemeFactory;
 import org.apache.jmeter.protocol.http.control.HeaderManager;
 import org.apache.jmeter.protocol.http.sampler.hc.LaxDeflateInputStream;
+import org.apache.jmeter.protocol.http.sampler.hc.LaxGZIPInputStream;
 import org.apache.jmeter.protocol.http.sampler.hc.LazyLayeredConnectionSocketFactory;
 import org.apache.jmeter.protocol.http.util.EncoderCache;
 import org.apache.jmeter.protocol.http.util.HTTPArgument;
@@ -182,10 +182,10 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
     private static final String CONTEXT_ATTRIBUTE_CLIENT_KEY = "__jmeter.C_K__";
 
     private static final String CONTEXT_ATTRIBUTE_SENT_BYTES = "__jmeter.S_B__";
-    
-    private static final String CONTEXT_ATTRIBUTE_RECEIVED_BYTES = "__jmeter.R_B__";
+        
+    private static final String CONTEXT_ATTRIBUTE_METRICS = "__jmeter.M__";
 
-    private static final int MAX_BODY_RETAIN_SIZE = JMeterUtils.getPropDefault("httpclient4.max_body_retain_size", 32 * 1024);
+    private static final boolean GZIP_RELAX_MODE = JMeterUtils.getPropDefault("httpclient4.gzip_relax_mode", false);
 
     private static final boolean DEFLATE_RELAX_MODE = JMeterUtils.getPropDefault("httpclient4.deflate_relax_mode", false);
 
@@ -194,7 +194,7 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
     private static final InputStreamFactory GZIP = new InputStreamFactory() {
         @Override
         public InputStream create(final InputStream instream) throws IOException {
-            return new GZIPInputStream(instream);
+            return new LaxGZIPInputStream(instream, GZIP_RELAX_MODE);
         }
     };
 
@@ -214,7 +214,7 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
     };
 
     private static final class PreemptiveAuthRequestInterceptor implements HttpRequestInterceptor {
-        //@Override
+        @Override
         public void process(HttpRequest request, HttpContext context) throws HttpException, IOException {
             HttpClientContext localContext = HttpClientContext.adapt(context);
             AuthManager authManager = (AuthManager) localContext.getAttribute(CONTEXT_ATTRIBUTE_AUTH_MANAGER);
@@ -239,7 +239,7 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
             } else {
                 try {
                     requestURI = new URI(request.getRequestLine().getUri());
-                } catch (final URISyntaxException ignore) {
+                } catch (final URISyntaxException ignore) { // NOSONAR
                     // NOOP
                 }
             }
@@ -378,6 +378,7 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
     
     private static final HttpRequestInterceptor PREEMPTIVE_AUTH_INTERCEPTOR = new PreemptiveAuthRequestInterceptor();
 
+
     // see  https://stackoverflow.com/questions/26166469/measure-bandwidth-usage-with-apache-httpcomponents-httpclient
     private static final HttpRequestExecutor REQUEST_EXECUTOR = new HttpRequestExecutor() {
 
@@ -388,19 +389,11 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
                 final HttpContext context) throws IOException, HttpException {
             HttpResponse response = super.doSendRequest(request, conn, context);
             HttpConnectionMetrics metrics = conn.getMetrics();
+            long sentBytesCount = metrics.getSentBytesCount();
+            // We save to store sent bytes as we need to reset metrics for received bytes
             context.setAttribute(CONTEXT_ATTRIBUTE_SENT_BYTES, metrics.getSentBytesCount());
-            metrics.reset();
-            return response;
-        }
-
-        @Override
-        protected HttpResponse doReceiveResponse(
-                final HttpRequest request,
-                final HttpClientConnection conn,
-                final HttpContext context) throws HttpException, IOException {
-            HttpResponse response = super.doReceiveResponse(request, conn, context);
-            HttpConnectionMetrics metrics = conn.getMetrics();
-            context.setAttribute(CONTEXT_ATTRIBUTE_RECEIVED_BYTES, metrics.getReceivedBytesCount()); 
+            context.setAttribute(CONTEXT_ATTRIBUTE_METRICS, metrics);
+            log.debug("Sent {} bytes", sentBytesCount);
             metrics.reset();
             return response;
         }
@@ -464,8 +457,10 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
         HTTPCLIENTS_CACHE_PER_THREAD_AND_HTTPCLIENTKEY = 
             InheritableThreadLocal.withInitial(() -> new HashMap<>(5));
 
-    // Scheme used for slow HTTP sockets. Cannot be set as a default, because must be set on an HttpClient instance.
-    private static final ConnectionSocketFactory SLOW_CONNECTION_SOCKET_FACTORY;
+    /**
+     * CONNECTION_SOCKET_FACTORY changes if we want to simulate Slow connection
+     */
+    private static final ConnectionSocketFactory CONNECTION_SOCKET_FACTORY;
 
     private static final ViewableFileBody[] EMPTY_FILE_BODIES = new ViewableFileBody[0];
 
@@ -475,9 +470,9 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
         // Set up HTTP scheme override if necessary
         if (CPS_HTTP > 0) {
             log.info("Setting up HTTP SlowProtocol, cps={}", CPS_HTTP);
-            SLOW_CONNECTION_SOCKET_FACTORY = new SlowHCPlainConnectionSocketFactory(CPS_HTTP);
+            CONNECTION_SOCKET_FACTORY = new SlowHCPlainConnectionSocketFactory(CPS_HTTP);
         } else {
-            SLOW_CONNECTION_SOCKET_FACTORY = PlainConnectionSocketFactory.getSocketFactory();
+            CONNECTION_SOCKET_FACTORY = PlainConnectionSocketFactory.getSocketFactory();
         }        
     }
 
@@ -621,7 +616,8 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
               + (long) httpResponse.getAllHeaders().length // Add \r for each header
               + 1L // Add \r for initial header
               + 2L; // final \r\n before data
-            long totalBytes = (Long) localContext.getAttribute(CONTEXT_ATTRIBUTE_RECEIVED_BYTES);
+            HttpConnectionMetrics metrics = (HttpConnectionMetrics) localContext.getAttribute(CONTEXT_ATTRIBUTE_METRICS);
+            long totalBytes = metrics.getReceivedBytesCount();
             res.setHeadersSize((int)headerBytes);
             res.setBodySize(totalBytes - headerBytes);
             res.setSentBytes((Long) localContext.getAttribute(CONTEXT_ATTRIBUTE_SENT_BYTES));
@@ -801,7 +797,7 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
     protected HTTPSampleResult createSampleResult(URL url, String method) {
         HTTPSampleResult res = new HTTPSampleResult();
 
-        res.setSampleLabel(url.toString()); // May be replaced later
+        res.setSampleLabel(this.testElement.getName());
         res.setHTTPMethod(method);
         res.setURL(url);
         
@@ -985,7 +981,7 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
             }
             Registry<ConnectionSocketFactory> registry = RegistryBuilder.<ConnectionSocketFactory> create().
                     register("https", new LazyLayeredConnectionSocketFactory()).
-                    register("http", SLOW_CONNECTION_SOCKET_FACTORY).
+                    register("http", CONNECTION_SOCKET_FACTORY).
                     build();
             
             // Modern browsers use more connections per host than the current httpclient default (2)
@@ -1015,7 +1011,7 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
                     setSchemePortResolver(new DefaultSchemePortResolver()).
                     setDnsResolver(resolver).
                     setRequestExecutor(REQUEST_EXECUTOR).
-                    setSSLContext(((JsseSSLManager)JsseSSLManager.getInstance()).getContext()).
+                    setSSLSocketFactory(new LazyLayeredConnectionSocketFactory()).
                     setDefaultCookieSpecRegistry(cookieSpecRegistry).
                     setDefaultSocketConfig(SocketConfig.DEFAULT).
                     setRedirectStrategy(new LaxRedirectStrategy()).
@@ -1028,7 +1024,8 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
                         .register(AuthSchemes.BASIC, new BasicSchemeFactory())
                         .register(AuthSchemes.DIGEST, new DigestSchemeFactory())
                         .register(AuthSchemes.NTLM, new NTLMSchemeFactory())
-                        .register(AuthSchemes.SPNEGO, new SPNegoSchemeFactory())
+                        .register(AuthSchemes.SPNEGO, new DynamicSPNegoSchemeFactory(
+                                AuthManager.STRIP_PORT, AuthManager.USE_CANONICAL_HOST_NAME))
                         .register(AuthSchemes.KERBEROS, new DynamicKerberosSchemeFactory(
                                 AuthManager.STRIP_PORT, AuthManager.USE_CANONICAL_HOST_NAME))
                         .build();
@@ -1151,7 +1148,6 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
     
         rCB.setRedirectsEnabled(getAutoRedirects());
         rCB.setMaxRedirects(HTTPSamplerBase.MAX_REDIRECTS);
-        rCB.setRedirectsEnabled(getAutoRedirects());
         httpRequest.setConfig(rCB.build());
         // a well-behaved browser is supposed to send 'Connection: close'
         // with the last request to an HTTP server. Instead, most browsers
@@ -1470,8 +1466,7 @@ public class HTTPHC4Impl extends HTTPHCAbstractImpl {
                         entityEnclosingRequest.setHeader(HTTPConstants.HEADER_CONTENT_TYPE, HTTPConstants.APPLICATION_X_WWW_FORM_URLENCODED);
                     }
                 }
-
-                FileEntity fileRequestEntity = new FileEntity(new File(file.getPath()),(ContentType) null);
+                FileEntity fileRequestEntity = new FileEntity(FileServer.getFileServer().getResolvedFile(file.getPath()), (ContentType) null);
                 entityEnclosingRequest.setEntity(fileRequestEntity);
 
                 // We just add placeholder text for file content
